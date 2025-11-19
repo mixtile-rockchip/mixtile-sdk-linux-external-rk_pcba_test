@@ -8,7 +8,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * 	 http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -25,50 +25,174 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include "unistd.h"
+#include <dirent.h>
 
 #include "emmc_test.h"
 
 #define LOG_TAG "emmc_test"
 #include "common.h"
 
-
-#ifdef PCBA_PX3SE
-#define EMMCPATH "/sys/bus/mmc/devices/mmc0:1234/block/mmcblk0/size"
-#elif defined PCBA_356X
-#define EMMCPATH "/sys/bus/mmc/devices/mmc2:0001/block/mmcblk2/size"
-#else
-#define EMMCPATH "/sys/bus/mmc/devices/mmc0:0001/block/mmcblk0/size"
-#endif
-
 #define READ_DDR_COMMAND "cat /proc/zoneinfo | busybox grep present | \
-busybox awk 'BEGIN{a=0}{a+=$2}END{print a}'"
+                        busybox awk 'BEGIN{a=0}{a+=$2}END{print a}'"
 
 #define RKNAND_TEST_CMD "cat /proc/rknand > %s"
 #define RKNAND_TEST_FILE "/tmp/rknand_test.txt"
 
+int is_valid_emmc_path(const char *path)
+{
+    char size_file[512];
+    char dev_file[512];
+    FILE *fp;
+    if (access(path, F_OK) != 0) {
+        return 0;
+    }
+    snprintf(size_file, sizeof(size_file), "%s/size", path);
+    if (access(size_file, R_OK) != 0) {
+        return 0;
+    }
+    snprintf(dev_file, sizeof(dev_file), "%s/dev", path);
+    if (access(dev_file, R_OK) != 0) {
+        return 0;
+    }
+    fp = fopen(size_file, "r");
+    if (fp) {
+        char buffer[64];
+        if (fgets(buffer, sizeof(buffer), fp)) {
+            unsigned long size = strtoul(buffer, NULL, 10);
+            fclose(fp);
+            return (size > 0);
+        }
+        fclose(fp);
+    }
+    return 0;
+}
+
+char* get_emmc_device_node(const char *sysfs_path)
+{
+    static char device_node[64];
+    const char *block_name = strrchr(sysfs_path, '/');
+    if (block_name) {
+        block_name++; // skip '/'
+        snprintf(device_node, sizeof(device_node), "/dev/%s", block_name);
+        return device_node;
+    }
+    return NULL;
+}
+
+char* scan_sysfs_for_emmc(void)
+{
+    static char emmc_path[512];
+    DIR *dir;
+    struct dirent *entry;
+    char path[512];
+    dir = opendir("/sys/bus/mmc/devices");
+    if (!dir) {
+        return NULL;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        snprintf(path, sizeof(path), "/sys/bus/mmc/devices/%s/block", entry->d_name);
+        DIR *block_dir = opendir(path);
+        if (block_dir) {
+            struct dirent *block_entry;
+            while ((block_entry = readdir(block_dir)) != NULL) {
+                if (strcmp(block_entry->d_name, ".") == 0 ||
+                    strcmp(block_entry->d_name, "..") == 0) {
+                    continue;
+                }
+                if (strncmp(block_entry->d_name, "mmcblk", 6) == 0) {
+                    snprintf(emmc_path, sizeof(emmc_path),
+                            "/sys/bus/mmc/devices/%s/block/%s",
+                            entry->d_name, block_entry->d_name);
+                    if (is_valid_emmc_path(emmc_path)) {
+                        closedir(block_dir);
+                        closedir(dir);
+                        printf("Found EMMC by scanning: %s\n", emmc_path);
+                        return emmc_path;
+                    }
+                }
+            }
+            closedir(block_dir);
+        }
+    }
+    closedir(dir);
+    return NULL;
+}
+
+char* find_emmc_by_type(void)
+{
+    char path[512];
+    FILE *fp;
+    DIR *dir = opendir("/sys/block");
+    if (!dir) {
+        return NULL;
+    }
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strncmp(entry->d_name, "mmcblk", 6) == 0) {
+            snprintf(path, sizeof(path), "/sys/block/%s/device/type", entry->d_name);
+            fp = fopen(path, "r");
+            if (fp) {
+                char type[16];
+                if (fgets(type, sizeof(type), fp)) {
+                    if (strstr(type, "MMC")) {
+                        snprintf(path, sizeof(path), "/sys/block/%s", entry->d_name);
+                        fclose(fp);
+                        closedir(dir);
+                        char real_path[512];
+                        if (realpath(path, real_path) != NULL) {
+                            printf("Found EMMC by type: %s\n", real_path);
+                            return strdup(real_path);
+                        }
+                    }
+                }
+                fclose(fp);
+            }
+        }
+    }
+    closedir(dir);
+    return NULL;
+}
+
+char* get_emmc_path(void)
+{
+    char *path = NULL;
+    path = scan_sysfs_for_emmc();
+    if (path) {
+        return path;
+    }
+    path = find_emmc_by_type();
+    if (path) {
+        return path;
+    }
+    printf("No EMMC path found\n");
+    return NULL;
+}
 
 /* for emmc  */
 static int readFromFile(const char *path, char *emmcsize_char, size_t size)
 {
-	if (!path)
-		return -1;
-
-	int fd = open(path, O_RDONLY|O_NOCTTY|O_NDELAY, 0);
-	if (fd == -1) {
-		printf("open '%s' failed!\n", path);
-		return -1;
-	}
-	ssize_t count = read(fd, emmcsize_char, size);
-
-	if (count > 0) {
-		while (count > 0 && emmcsize_char[count-1] == '\n')
-			count--;
-			emmcsize_char[count] = '\0';
-	} else {
-		emmcsize_char[0] = '\0';
-	}
-	close(fd);
-	return count;
+    if (!path)
+        return -1;
+    char sizepath[256];
+    snprintf(sizepath, sizeof(sizepath), "%s/size", path);
+    int fd = open(sizepath, O_RDONLY|O_NOCTTY|O_NDELAY, 0);
+    if (fd == -1) {
+        printf("open '%s' failed!\n", sizepath);
+        return -1;
+    }
+    ssize_t count = read(fd, emmcsize_char, size);
+    if (count > 0) {
+        while (count > 0 && emmcsize_char[count-1] == '\n')
+            count--;
+            emmcsize_char[count] = '\0';
+    } else {
+        emmcsize_char[0] = '\0';
+    }
+    close(fd);
+    return count;
 }
 
 int get_emmc_size(char *size_data)
@@ -76,7 +200,6 @@ int get_emmc_size(char *size_data)
     int count;
     int emmc_size=1;
     double size = (double)(atoi(size_data))/2/1024/1024;
-
     if (size > 0 && size <= 1)  /*1 GB */
         return 1;
     for (count = 1; count < 10; count++)
@@ -89,214 +212,43 @@ int get_emmc_size(char *size_data)
     return -1;
 }
 
-#ifdef PCBA_PX3SE//emmc
 void *emmc_test(void *argv)
 {
-	int emmc_ret = 0;
-	char emmcsize_char[20];
-	int emmc_size = 0;
-
-	int ddr_ret = 0;
-	char ddrsize_char[20];
-	int ddr_size = 0;
-	char cmd[128];
-
-    printf("=======  emmc test starting   ========\n");
-    //sprintf(cmd,"aplay %s/emmc_test_start.wav",AUDIO_PATH);
-    //system(cmd);
-    //system("aplay /data/test/emmc_test_start.wav");
-	/* For emmc */
-	memset(emmcsize_char, 0, sizeof(emmcsize_char));
-	emmc_ret = readFromFile(EMMCPATH, emmcsize_char, sizeof(emmcsize_char));
-
-	printf("readFromFile effective bytes is %d \n",emmc_ret);
-	if (emmc_ret >= 0) {  /*read back normal*/
-		emmc_size = get_emmc_size(emmcsize_char);
-		if(emmc_size < 0){
-            emmc_ret = -1;
-            goto fail;
-        }
-		printf("=======  emmc_size is: %d GB ========\n",emmc_size);
-		if (EMMC_CAPACITY != emmc_size)
-        {
-            goto fail;
-        }
-	}
-	else
-	{
-	    goto fail;
-	}
-	printf("=======  emmc_test success  ========\n");
-
-	return (void*)emmc_ret;
-fail:
-    printf("=======  emmc_test failed  ========\n");
-
-    return (void*)emmc_ret;
-}
-#endif
-
-#ifdef PCBA_3308
-void *emmc_test(void *argv)
-{
+    int emmc_ret = 0;
+    char emmcsize_char[20];
+    int emmc_size = 0;
+    int ddr_ret = 0;
+    char ddrsize_char[20];
+    int ddr_size = 0;
     char cmd[128];
-    char buf[128];
-    FILE *fp;
-	int emmc_ret = -1;
-
-    printf("=======  emmc test starting   ========\n");
-
-    sprintf(cmd,RKNAND_TEST_CMD,RKNAND_TEST_FILE);
-    system(cmd);
-    printf("cmd is: %s.\n",cmd);
-    sleep(1);
-
-    fp = fopen(RKNAND_TEST_FILE, "r");
-    if (!fp)
-    {
-        printf("%s fopen err:%s\n",__func__,strerror(errno));
-        return (void*)-1;
+    char *emmcpath = get_emmc_path();
+    if (!emmcpath) {
+        printf("No EMMC path found\n");
+        goto fail;
     }
-
-    while(!feof(fp))
-    {
-        fgets(buf,sizeof(buf),fp);
-         if(strstr(buf,"Device Capacity: 256 MB")!=NULL)
-         {
-             emmc_ret = 0;
-             break;
-         }
-    }
-    fclose(fp);
-    remove(RKNAND_TEST_FILE);
-
-    printf("\n=================== function :%s finish======================\n",__func__);
-    return (void*)emmc_ret;
-}
-#endif
-
-#ifdef PCBA_1808
-// TODO: add 1808 emmc test code here.
-void *emmc_test(void *argv)
-{
-    return 0;
-}
-
-#endif
-
-#ifdef PCBA_3326
-// TODO: add 3326 emmc test code here.
-void *emmc_test(void *argv)
-{
-    return 0;
-}
-
-#endif
-
-#ifdef PCBA_PX30
-// TODO: add PX30 emmc test code here.
-void *emmc_test(void *argv)
-{
-    return 0;
-}
-#endif
-
-#ifdef PCBA_3288
-// TODO: add 3288 emmc test code here.
-void *emmc_test(void *argv)
-{
-    return 0;
-}
-#endif
-
-#ifdef PCBA_3328
-// TODO: add 3328 emmc test code here.
-void *emmc_test(void *argv)
-{
-    return 0;
-}
-#endif
-
-#ifdef PCBA_3399
-// TODO: add 3399 emmc test code here.
-void *emmc_test(void *argv)
-{
-    return 0;
-}
-
-#endif
-
-#ifdef PCBA_3399PRO
-// TODO: add 3399PRO emmc test code here.
-void *emmc_test(void *argv)
-{
-    return 0;
-}
-#endif
-
-#ifdef PCBA_1126_1109
-// TODO: add rv1126/1109 emmc test code here.
-void *emmc_test(void *argv)
-{
-    return 0;
-}
-#endif
-
-#ifdef PCBA_356X
-// TODO: add 356X emmc test code here.
-void *emmc_test(void *argv)
-{
-	int emmc_ret = 0;
-	char emmcsize_char[20];
-	int emmc_size = 0;
-
-	int ddr_ret = 0;
-	char ddrsize_char[20];
-	int ddr_size = 0;
-	char cmd[128];
-
     printf("=======  emmc test starting   ========\n");
     //sprintf(cmd,"aplay %s/emmc_test_start.wav",AUDIO_PATH);
     //system(cmd);
     //system("aplay /data/test/emmc_test_start.wav");
-	/* For emmc */
-	memset(emmcsize_char, 0, sizeof(emmcsize_char));
-	emmc_ret = readFromFile(EMMCPATH, emmcsize_char, sizeof(emmcsize_char));
-
-	printf("readFromFile effective bytes is %d \n",emmc_ret);
-	if (emmc_ret >= 0) {  /*read back normal*/
-		emmc_size = get_emmc_size(emmcsize_char);
-		if(emmc_size < 0){
+    memset(emmcsize_char, 0, sizeof(emmcsize_char));
+    emmc_ret = readFromFile(emmcpath, emmcsize_char, sizeof(emmcsize_char));
+    printf("readFromFile effective bytes is %d \n",emmc_ret);
+    if (emmc_ret >= 0) {  /*read back normal*/
+        emmc_size = get_emmc_size(emmcsize_char);
+        if(emmc_size < 0){
             emmc_ret = -1;
             goto fail;
         }
-		printf("=======  emmc_size is: %d GB ========\n",emmc_size);
-		if (EMMC_CAPACITY != emmc_size)
-        {
-            goto fail;
-        }
-	}
-	else
-	{
-	    goto fail;
-	}
-	printf("=======  emmc_test success  ========\n");
-
-	return (void*)emmc_ret;
+        printf("=======  emmc_size is: %d GB ========\n",emmc_size);
+    } else {
+        goto fail;
+    }
+    printf("=======  emmc_test success  ========\n");
+    return (void*)emmc_ret;
 fail:
     printf("=======  emmc_test failed  ========\n");
-
     return (void*)emmc_ret;
 }
-#endif
-
-#ifdef PCBA_3588
-// TODO: add 3588 emmc test code here.
-void *emmc_test(void *argv)
-{
-    return 0;
-}
-#endif
 
 int main(int argc, char *argv[])
 {
@@ -304,8 +256,7 @@ int main(int argc, char *argv[])
     char buf[COMMAND_VALUESIZE] = "emmc_test";
     char result[COMMAND_VALUESIZE] = RESULT_PASS;
     test_flag = (int)emmc_test(argv[0]);
-    if(test_flag < 0)
-    {
+    if (test_flag < 0) {
         strcpy(result,RESULT_FAIL);
         err_code = EMMC_PROC_ERR;
     }
