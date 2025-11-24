@@ -9,7 +9,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * 	 http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -30,11 +30,10 @@
 #define LOG_TAG "sdcard_test"
 #include "common.h"
 
-
 char result[COMMAND_VALUESIZE] = RESULT_FAIL;
 
-
-//* 信号处理函数，在结束进程前，为按键测试返回一个结果；
+/* Signal processing function, which returns a result
+for the key test before terminating the process; */
 //static int sdcard_result_send(int sign_no)
 //{
 //    int err_code =0;
@@ -88,12 +87,11 @@ int main(int argc, char *argv[])
     int test_flag = 0,err_code = 0;
     char buf[COMMAND_VALUESIZE] = "sdcard_test";
 
-	log_info("sdcard test process start...\n");
-    //* 注册信号处理函数
-	//signal(SIGTERM,sdcard_result_send);
-
+    log_info("sdcard test process start...\n");
+    //* Register Signal Processing Function
+    //signal(SIGTERM,sdcard_result_send);
     test_flag = sdcard_auto_test();
-    if(test_flag == 0) {
+    if (test_flag == 0) {
         strcpy(result,RESULT_PASS);
         err_code = 0;
         log_info("sdcard test Pass\n");
@@ -106,7 +104,6 @@ int main(int argc, char *argv[])
         err_code = SDCARD_TIMEOUT_ERR;
         log_info("sdcard test Timgout...\n");
     }
-
     if (test_flag == 0) {
         int fd = -1;
         double cap;
@@ -115,8 +112,8 @@ int main(int argc, char *argv[])
         memset(sdcard_size, 0 ,sizeof(sdcard_size));
         int r_len = read(fd, sdcard_size, sizeof(sdcard_size));
         if (r_len <= 0) {
-			log_err("read %s fail, errno = %d\n", "/run/sd_capacity", errno);
-		}
+            log_err("read %s fail, errno = %d\n", "/run/sd_capacity", errno);
+        }
         //fgets(sdcard_size, 32, fd);
         cap = strtod(sdcard_size, NULL);
         snprintf(sdcard_size, sizeof(sdcard_size), "capacity:%.4fG ", cap * 1.0 / 1024 / 1024);

@@ -9,7 +9,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- * 	 http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -33,7 +33,8 @@
 char result[COMMAND_VALUESIZE] = RESULT_FAIL;
 
 
-//* 信号处理函数，在结束进程前，为按键测试返回一个结果；
+/* Signal processing function, before terminating the process,
+returns a result for the USB drive test; */
 //static int usbhost_result_send(int sign_no)
 //{
 //    int err_code =0;
@@ -55,19 +56,13 @@ int usbhost_auto_test()
     if (status == -1) {
         log_info("system cmd run error...\n");
         ret = -1;
-    }
-    else
-    {
+    } else {
         log_info("exit status value = [0x%x]\n", status);
-        if (WIFEXITED(status))
-        {
-            if (0 == WEXITSTATUS(status))
-            {
+        if (WIFEXITED(status)) {
+            if (0 == WEXITSTATUS(status)) {
                 log_info("run shell script successfully.\n");
                 ret = 0;
-            }
-            else
-            {
+            } else {
                 if (1 == WEXITSTATUS(status)) {
                     log_info("run shell script fail, script exit code: %d\n", WEXITSTATUS(status));
                     ret = 1;
@@ -76,17 +71,13 @@ int usbhost_auto_test()
                     ret = 2;
                 }
             }
-        }
-        else
-        {
+        } else {
             log_info("exit status = [%d]\n", WEXITSTATUS(status));
             ret = -1;
         }
     }
-
     if (ret != 0)
         log_info("usbhost test failed. ret = %d\n", ret);
-
     return ret;
 }
 
@@ -94,13 +85,11 @@ int main(int argc, char *argv[])
 {
     int test_flag = 0,err_code = 0;
     char buf[COMMAND_VALUESIZE] = "usbhost_test";
-
-	log_info("usbhost test process start...\n");
-    //* 注册信号处理函数
-	//signal(SIGTERM,usbhost_result_send);
-
+    log_info("usbhost test process start...\n");
+    // Register Signal Processing Function
+    // signal(SIGTERM,usbhost_result_send);
     test_flag = usbhost_auto_test();
-    if(test_flag == 0) {
+    if (test_flag == 0) {
         strcpy(result,RESULT_PASS);
         err_code = 0;
         log_info("usbhost test Pass\n");
@@ -113,7 +102,6 @@ int main(int argc, char *argv[])
         err_code = SDCARD_TIMEOUT_ERR;
         log_info("usbhost test Timgout...\n");
     }
-
     if (test_flag == 0) {
         int fd = -1;
         double cap;
@@ -122,15 +110,14 @@ int main(int argc, char *argv[])
         memset(usbhost_size, 0 ,sizeof(usbhost_size));
         int r_len = read(fd, usbhost_size, sizeof(usbhost_size));
         if (r_len <= 0) {
-			log_err("read %s fail, errno = %d\n", "/run/usbhost_capacity", errno);
-		}
+            log_err("read %s fail, errno = %d\n", "/run/usbhost_capacity", errno);
+        }
         //fgets(sdcard_size, 32, fd);
         cap = strtod(usbhost_size, NULL);
         snprintf(usbhost_size, sizeof(usbhost_size), "capacity:%.4fG ", cap * 1.0 / 1024 / 1024);
         strcat(buf,": ");
         strcat(buf, usbhost_size);
     }
-
     //strcat(buf, result);
     send_msg_to_server(buf, result, err_code);
     return 0;
