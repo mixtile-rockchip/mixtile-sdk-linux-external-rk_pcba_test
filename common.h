@@ -19,72 +19,42 @@
 #define __COMMON_H__
 #include <stdio.h>
 
-#ifdef PCBA_PX3SE
-#define   PCBA_TEST_PLATFORM            "PX3SE"
-#endif
+#define CHIP_LIST \
+    CHIP_ENTRY(PX30,      "px30")      \
+    CHIP_ENTRY(PX3SE,     "px3SE")     \
+    CHIP_ENTRY(RK1808,    "rk1808")    \
+    CHIP_ENTRY(RK3288,    "rk3288")    \
+    CHIP_ENTRY(RK3308,    "rk3308")    \
+    CHIP_ENTRY(RK3326,    "rk3326")    \
+    CHIP_ENTRY(RK3328,    "rk3328")    \
+    CHIP_ENTRY(RK3229GVA, "rk3229")    \
+    CHIP_ENTRY(RK3358,    "rk3358")    \
+    CHIP_ENTRY(RK3399PRO, "rk3399pro") \
+    CHIP_ENTRY(RK3399,    "rk3399")    \
+    CHIP_ENTRY(rk3562,    "rk3562")    \
+    CHIP_ENTRY(RK3568,    "rk3568")    \
+    CHIP_ENTRY(RK3576,    "rk3576")    \
+    CHIP_ENTRY(RK3588,    "rk3588")    \
+    CHIP_ENTRY(RV1126,    "rv1126")    \
 
-#ifdef PCBA_ECHO
-#define   PCBA_TEST_PLATFORM            "ECHO"
-#endif
+typedef enum {
+    CHIP_UNKNOWN = -1,
+#define CHIP_ENTRY(id, name) CHIP_##id,
+    CHIP_LIST
+#undef CHIP_ENTRY
+    CHIP_COUNT
+} chip_id_t;
 
-#ifdef PCBA_CVR
-#define   PCBA_TEST_PLATFORM            "CVR"
-#endif
+typedef struct {
+    chip_id_t id;
+    const char* name;
+} chip_info_t;
 
-#ifdef PCBA_3308
-#define   PCBA_TEST_PLATFORM            "3308"
-#endif
-
-#ifdef PCBA_3229GVA
-#define   PCBA_TEST_PLATFORM            "GVA"
-#endif
-
-#ifdef PCBA_1808
-#define   PCBA_TEST_PLATFORM            "1808"
-#endif
-
-#ifdef PCBA_3326
-#define   PCBA_TEST_PLATFORM            "3326"
-#endif
-
-#ifdef PCBA_PX30
-#define   PCBA_TEST_PLATFORM            "PX30"
-#endif
-
-#ifdef PCBA_3288
-#define   PCBA_TEST_PLATFORM            "3288"
-#endif
-
-#ifdef PCBA_312X
-#define   PCBA_TEST_PLATFORM            "312X"
-#endif
-
-#ifdef PCBA_3328
-#define   PCBA_TEST_PLATFORM            "3328"
-#endif
-
-#ifdef PCBA_3399
-#define   PCBA_TEST_PLATFORM            "3399"
-#endif
-
-#ifdef PCBA_3399PRO
-#define   PCBA_TEST_PLATFORM            "3399PRO"
-#endif
-
-#ifdef PCBA_1126_1109
-#define   PCBA_TEST_PLATFORM            "1126_1109"
-#endif
-
-#ifdef PCBA_356X
-#define   PCBA_TEST_PLATFORM            "356X"
-#endif
-
-#ifdef PCBA_3588
-#define   PCBA_TEST_PLATFORM            "3588"
-#endif
-
+chip_id_t get_chipid(void);
+int get_chipname_from_file(char* chipname, int len);
 
 #define   PCBA_VERSION                  "1.2.0"
+#define   PCBA_MAX_CHIP_NAME              16
 
 typedef enum {
 	/* format parse*/

@@ -48,42 +48,6 @@
 #define CHILD_EXIT 1
 #define FORK_FAIL -1
 
-#ifdef PCBA_PX3SE
-#define SN_NODE     "/sys/devices/2005a000.i2c/i2c-2/2-0054/snread"
-#else
-#define SN_NODE     ""
-#endif
-
-#ifdef PCBA_PX3SE
-#warning  "---------------------define PCBA_PX3SE-----------------------"
-#elif (defined PCBA_3308)
-#warning  "---------------------define PCBA_3308------------------------"
-#elif (defined PCBA_3229GVA)
-#warning  "---------------------define PCBA_3229GVA---------------------"
-#elif (defined PCBA_1808)
-#warning  "---------------------define PCBA_1808------------------------"
-#elif (defined PCBA_3326)
-#warning  "---------------------define PCBA_3266------------------------"
-#elif (defined PCBA_PX30)
-#warning  "---------------------define PCBA_PX30------------------------"
-#elif (defined PCBA_3288)
-#warning  "---------------------define PCBA_3288------------------------"
-#elif (defined PCBA_3328)
-#warning  "---------------------define PCBA_3328------------------------"
-#elif (defined PCBA_3399)
-#warning  "---------------------define PCBA_3399------------------------"
-#elif (defined PCBA_3399PRO)
-#warning  "---------------------define PCBA_3399PRO---------------------"
-#elif (defined PCBA_1126_1109)
-#warning  "---------------------define PCBA_1126_1109------------------------"
-#elif (defined PCBA_356X)
-#warning  "---------------------define PCBA_356X---------------------"
-#elif (defined PCBA_3588)
-#warning  "---------------------define PCBA_3588---------------------"
-#else
-#error "====================not define any platform pcba macro here,pls check it======================"
-#endif
-
 static void sig_child_handle(int sig)
 {
     int status = 0;
@@ -282,13 +246,21 @@ static int sn_load(char* sn_buff)
     FILE *fp=NULL;
     char buff[512];
     char cmd[COMMAND_VALUESIZE] = {0};
-
+    chip_id_t chip_id = get_chipid();
+    char sn_node[256] = {0};
     memset(buff,0,sizeof(buff));
 
     if(sn_buff == NULL)
         return -1;
-
-    snprintf(cmd, sizeof(cmd), "cat %s", SN_NODE);
+    switch (chip_id) {
+        case CHIP_PX3SE:
+            snprintf(sn_node, sizeof(sn_node), "/sys/devices/2005a000.i2c/i2c-2/2-0054/snread");
+            break;
+        default:
+            snprintf(sn_node, sizeof(sn_node), " ");
+            break;
+    }
+    snprintf(cmd, sizeof(cmd), "cat %s", sn_node);
     if(NULL ==(fp = popen(cmd,"r")))
     {
         fprintf(stderr,"execute command failed: %s",strerror(errno));
@@ -322,6 +294,9 @@ static int enter_pcba_test_mode(char *msg, char *test_flag)
     int len = 0;
     char *start = NULL;
     int sockfd = -1;
+    char chipname[PCBA_MAX_CHIP_NAME] = {0};
+    int ret = 0;
+    chip_id_t chip_id = get_chipid();
 
     log_info("enter pcba test mode ...\n");
 
@@ -347,30 +322,41 @@ static int enter_pcba_test_mode(char *msg, char *test_flag)
                  (unsigned char)ifr.ifr_hwaddr.sa_data[5]);
     }
 
-#ifdef PCBA_PX3SE
-    int ret = sn_load(local_sn);
-#endif
-
+    switch (chip_id) {
+        case CHIP_PX3SE:
+            ret = sn_load(local_sn);
+            break;
+        default:
+            break;
+    }
+    len = get_chipname_from_file(chipname, PCBA_MAX_CHIP_NAME) + 1;
+    if (len == 0) {
+        log_err("get chipname from env failed\n");
+    }
     start = msg;
-    len = strlen(PCBA_TEST_PLATFORM";");
-    memcpy(start, PCBA_TEST_PLATFORM";", len);
+    memcpy(start, chipname, len);
+    start[len-1] = ';';
     start += len;
     len = strlen(local_mac);
     memcpy(start, local_mac, len);
 
-#ifdef PCBA_PX3SE
-    if (!ret) {
-        start += len;
-        *start++ = ';';
-        len = strlen(local_sn);
+    switch (chip_id) {
+        case CHIP_PX3SE:
+            if (!ret) {
+                start += len;
+                *start++ = ';';
+                len = strlen(local_sn);
 
-        if (len >= 32) {
-            local_sn[31] = '0';
-            len = 32;
-        }
-        strcat(start, local_sn);
+                if (len >= 32) {
+                    local_sn[31] = '0';
+                    len = 32;
+                }
+                strcat(start, local_sn);
+            }
+            break;
+        default:
+            break;
     }
-#endif
 
     return 0;
 }
@@ -381,6 +367,7 @@ static int exit_pcba_test_mode(PCBA_SINGLE_PARA *recv_paras, char *test_flag)
     struct dirent *dir_ptr = NULL;
     char result_filename[COMMAND_VALUESIZE] = {0};
     int ret = 0;
+    chip_id_t chip_id = get_chipid();
 
     if ((dir = opendir(TEST_RESULT_SAVE_PATH)) == NULL) {
         log_err("exit test mode opendir fail\n");
@@ -402,22 +389,17 @@ static int exit_pcba_test_mode(PCBA_SINGLE_PARA *recv_paras, char *test_flag)
         log_info("##########################################################\n");
     }
 
-#if PCBA_3229GVA
-    /* If the EXIT type command has a "1" message, indicating
-     * that the test is complete, the system will be switched.
-     * If it carries a "0" message, it indicates that the current
-     * test has failed entries.
-     *
-     * Set current system(slot A) unbootable, then reboot.
-     * system in slot B will boot up.
-     */
-    if (*recv_paras[INDEX_MSG].valuestr == '1') {
-        log_info("Set current system unbootable!\n");
-        setSlotAsUnbootable(0);
-        system("busybox reboot");
+    switch (chip_id) {
+        case CHIP_RK3229GVA:
+            if (*recv_paras[INDEX_MSG].valuestr == '1') {
+                log_info("Set current system unbootable!\n");
+                // setSlotAsUnbootable(0);
+                system("busybox reboot");
+            }
+            break;
+        default:
+            break;
     }
-#endif
-
     return ret;
 }
 
