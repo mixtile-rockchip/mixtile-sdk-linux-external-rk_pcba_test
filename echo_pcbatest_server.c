@@ -387,18 +387,7 @@ static int exit_pcba_test_mode(PCBA_SINGLE_PARA *recv_paras, char *test_flag)
         log_info("##########################################################\n");
         log_info("############# recive exit cmd, will reboot!!! ############\n");
         log_info("##########################################################\n");
-    }
-
-    switch (chip_id) {
-        case CHIP_RK3229GVA:
-            if (*recv_paras[INDEX_MSG].valuestr == '1') {
-                log_info("Set current system unbootable!\n");
-                // setSlotAsUnbootable(0);
-                system("busybox reboot");
-            }
-            break;
-        default:
-            break;
+        system("busybox reboot");
     }
     return ret;
 }
