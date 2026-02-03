@@ -33,6 +33,7 @@
     CHIP_ENTRY(RK3399,    "rk3399")    \
     CHIP_ENTRY(rk3562,    "rk3562")    \
     CHIP_ENTRY(RK3568,    "rk3568")    \
+    CHIP_ENTRY(RK3572,    "rk3572")    \
     CHIP_ENTRY(RK3576,    "rk3576")    \
     CHIP_ENTRY(RK3588,    "rk3588")    \
     CHIP_ENTRY(RV1126,    "rv1126")    \
